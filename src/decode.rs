@@ -8,105 +8,105 @@ pub enum Instruction {
   /// opcode, rd, imm
   UJ(u8, u8, u32),
 
-  add(u8, u8, u8),
-  sub(u8, u8, u8),
-  xor(u8, u8, u8),
-  or(u8, u8, u8),
-  and(u8, u8, u8),
-  sll(u8, u8, u8),
-  srl(u8, u8, u8),
-  sra(u8, u8, u8),
-  slt(u8, u8, u8),
-  sltu(u8, u8, u8),
+  add(Reg, Reg, Reg),
+  sub(Reg, Reg, Reg),
+  xor(Reg, Reg, Reg),
+  or(Reg, Reg, Reg),
+  and(Reg, Reg, Reg),
+  sll(Reg, Reg, Reg),
+  srl(Reg, Reg, Reg),
+  sra(Reg, Reg, Reg),
+  slt(Reg, Reg, Reg),
+  sltu(Reg, Reg, Reg),
 
-  addw(u8, u8, u8),
-  subw(u8, u8, u8),
-  sllw(u8, u8, u8),
-  srlw(u8, u8, u8),
-  sraw(u8, u8, u8),
+  addw(Reg, Reg, Reg),
+  subw(Reg, Reg, Reg),
+  sllw(Reg, Reg, Reg),
+  srlw(Reg, Reg, Reg),
+  sraw(Reg, Reg, Reg),
 
-  addi(u8, u8, i16),
-  xori(u8, u8, i16),
-  ori(u8, u8, i16),
-  andi(u8, u8, i16),
-  slli(u8, u8, u8),
-  srli(u8, u8, u8),
-  srai(u8, u8, u8),
-  slti(u8, u8, i16),
-  sltiu(u8, u8, i16),
+  addi(Reg, Reg, i16),
+  xori(Reg, Reg, i16),
+  ori(Reg, Reg, i16),
+  andi(Reg, Reg, i16),
+  slli(Reg, Reg, u8),
+  srli(Reg, Reg, u8),
+  srai(Reg, Reg, u8),
+  slti(Reg, Reg, i16),
+  sltiu(Reg, Reg, i16),
 
-  addiw(u8, u8, i16),
-  slliw(u8, u8, u8),
-  srliw(u8, u8, u8),
-  sraiw(u8, u8, u8),
+  addiw(Reg, Reg, i16),
+  slliw(Reg, Reg, u8),
+  srliw(Reg, Reg, u8),
+  sraiw(Reg, Reg, u8),
 
   // * RV64C *
   /// c.fld rd', uimm(rs1')
-  c_fld(u8, u8, u8),
+  c_fld(FloatReg, u8, Reg),
   /// c.ld rd', uimm(rs1')
-  c_ld(u8, u8, u8),
+  c_ld(Reg, u8, Reg),
   /// c.fsd rs1', uimm(rs2')
-  c_fsd(u8, u8, u8),
+  c_fsd(FloatReg, u8, Reg),
   /// c.sd rs1', uimm(rs2')
-  c_sd(u8, u8, u8),
+  c_sd(Reg, u8, Reg),
   /// c.lw rd', uimm(rs1')
-  c_lw(u8, u8, u8),
+  c_lw(Reg, u8, Reg),
   /// c.sw rs1', uimm(rs2')
-  c_sw(u8, u8, u8),
+  c_sw(Reg, u8, Reg),
   /// c.addi4spn rd', uimm
-  c_addi4spn(u8, u16),
+  c_addi4spn(Reg, u16),
   /// c.nop
   c_nop,
   /// c.addi rd, imm
-  c_addi(u8, i8),
-  c_addiw(u8, i8),
-  c_li(u8, i8),
+  c_addi(Reg, i8),
+  c_addiw(Reg, i8),
+  c_li(Reg, i8),
   c_addi16sp(i16),
   /// c.lui rd, imm
-  c_lui(u8, i32),
+  c_lui(Reg, i32),
   /// c.srli rd', uimm
-  c_srli(u8, u8),
+  c_srli(Reg, u8),
   /// c.srai rd', uimm
-  c_srai(u8, u8),
+  c_srai(Reg, u8),
   /// c.andi rd', imm
-  c_andi(u8, i8),
+  c_andi(Reg, i8),
   /// c.sub rd', rs2'
-  c_sub(u8, u8),
+  c_sub(Reg, Reg),
   /// c.xor rd', rs2'
-  c_xor(u8, u8),
+  c_xor(Reg, Reg),
   /// c.or rd', rs2'
-  c_or(u8, u8),
+  c_or(Reg, Reg),
   /// c.and rd', rs2'
-  c_and(u8, u8),
+  c_and(Reg, Reg),
   /// c.subw rd', rs2'
-  c_subw(u8, u8),
+  c_subw(Reg, Reg),
   /// c.addw rd', rs2'
-  c_addw(u8, u8),
+  c_addw(Reg, Reg),
   /// c.j offset
   c_j(i16),
   /// c.beqz rs1', imm
-  c_beqz(u8, i16),
+  c_beqz(Reg, i16),
   /// c.bnez rs1', imm
-  c_bnez(u8, i16),
+  c_bnez(Reg, i16),
   /// c.slli rd, uimm
-  c_slli(u8, u8),
-  c_fldsp(u8, u16),
-  c_lwsp(u8, u8),
-  c_ldsp(u8, u16),
+  c_slli(Reg, u8),
+  c_fldsp(FloatReg, u16),
+  c_lwsp(Reg, u8),
+  c_ldsp(Reg, u16),
   /// c.jr rs1
-  c_jr(u8),
+  c_jr(Reg),
   /// c.mv rd, rs2
-  c_mv(u8, u8),
+  c_mv(Reg, Reg),
   /// c.ebreak
   c_ebreak,
   /// c.jalr rs1
-  c_jalr(u8),
+  c_jalr(Reg),
   /// c_add rd, rs2
-  c_add(u8, u8),
+  c_add(Reg, Reg),
   /// c.fsdsp rs2, uimm(sp)
-  c_fsdsp(u8, u16),
-  c_swsp(u8, u8),
-  c_sdsp(u8, u16),
+  c_fsdsp(FloatReg, u16),
+  c_swsp(Reg, u8),
+  c_sdsp(Reg, u16),
 }
 
 pub fn parse_word(word: u32) -> Instruction {
@@ -133,7 +133,7 @@ pub fn parse_word(word: u32) -> Instruction {
         (2, 0) => slt,
         (3, 0) => sltu,
         _ => unimplemented!(),
-      })(rd, rs1, rs2),
+      })(Reg::x(rd), Reg::x(rs1), Reg::x(rs2)),
       // R-type, OP-32
       0b01110 => (match (funct3, funct7) {
         (0, 0) => addw,
@@ -142,7 +142,7 @@ pub fn parse_word(word: u32) -> Instruction {
         (5, 0) => srlw,
         (5, 32) => sraw,
         _ => unimplemented!(),
-      })(rd, rs1, rs2),
+      })(Reg::x(rd), Reg::x(rs1), Reg::x(rs2)),
       // I-type, OP-IMM | OP-IMM32 | LOAD | SYSTEM | STORE
       op @ (0b00100 | 0b00110 | 0b00000 | 0b11100) => {
         let imm_11_5 = funct7 as u16;
@@ -154,9 +154,9 @@ pub fn parse_word(word: u32) -> Instruction {
             4 => xori,
             6 => ori,
             7 => andi,
-            1 if imm_11_5 == 0 => return slli(rd, rs1, rs2),
-            5 if imm_11_5 == 0 => return srli(rd, rs1, rs2),
-            5 if imm_11_5 == 32 => return srai(rd, rs1, rs2),
+            1 if imm_11_5 == 0 => return slli(Reg::x(rd), Reg::x(rs1), rs2),
+            5 if imm_11_5 == 0 => return srli(Reg::x(rd), Reg::x(rs1), rs2),
+            5 if imm_11_5 == 32 => return srai(Reg::x(rd), Reg::x(rs1), rs2),
             2 => slti,
             3 => sltiu,
             _ => unimplemented!(),
@@ -164,13 +164,13 @@ pub fn parse_word(word: u32) -> Instruction {
           // OP-IMM32
           0b00110 => match (funct3, imm_11_5) {
             (0, _) => addiw,
-            (1, 0) => return slliw(rd, rs1, rs2),
-            (5, 0) => return srliw(rd, rs1, rs2),
-            (5, 32) => return sraiw(rd, rs1, rs2),
+            (1, 0) => return slliw(Reg::x(rd), Reg::x(rs1), rs2),
+            (5, 0) => return srliw(Reg::x(rd), Reg::x(rs1), rs2),
+            (5, 32) => return sraiw(Reg::x(rd), Reg::x(rs1), rs2),
             _ => unimplemented!(),
           },
           _ => unreachable!(),
-        })(rd, rs1, sx16(imm, 12))
+        })(Reg::x(rd), Reg::x(rs1), sext16(imm, 12))
       }
       // TODO: finish off
       // BRANCH
@@ -209,10 +209,10 @@ pub fn parse_word(word: u32) -> Instruction {
             let uimm_7_6 = word >> 5 & 0b11;
             let uimm = (uimm_7_6 << 6 + uimm_5_3 << 3) as u8;
             match funct3 {
-              0b001 => c_fld(rdi_rs2i, uimm, rs1i),
-              0b011 => c_ld(rdi_rs2i, uimm, rs1i),
-              0b101 => c_fsd(rs1i, uimm, rdi_rs2i),
-              0b111 => c_sd(rs1i, uimm, rdi_rs2i),
+              0b001 => c_fld(FloatReg::compress(rdi_rs2i), uimm, Reg::compress(rs1i)),
+              0b011 => c_ld(Reg::compress(rdi_rs2i), uimm, Reg::compress(rs1i)),
+              0b101 => c_fsd(FloatReg::compress(rs1i), uimm, Reg::compress(rdi_rs2i)),
+              0b111 => c_sd(Reg::compress(rs1i), uimm, Reg::compress(rdi_rs2i)),
               _ => unreachable!(),
             }
           }
@@ -223,9 +223,9 @@ pub fn parse_word(word: u32) -> Instruction {
             let uimm_6 = word >> 5 & 1;
             let uimm = (uimm_6 << 6 + uimm_5_3 << 3 + uimm_2 << 2) as u8;
             if funct3 & 0b100 == 0 {
-              c_lw(rdi_rs2i, uimm, rs1i)
+              c_lw(Reg::compress(rdi_rs2i), uimm, Reg::compress(rs1i))
             } else {
-              c_sw(rs1i, uimm, rdi_rs2i)
+              c_sw(Reg::compress(rs1i), uimm, Reg::compress(rdi_rs2i))
             }
           }
           // c.addi4spn
@@ -235,7 +235,7 @@ pub fn parse_word(word: u32) -> Instruction {
             let uimm_2 = word >> 6 & 1;
             let uimm_3 = word >> 5 & 1;
             let uimm = uimm_9_6 << 6 + uimm_5_4 << 4 + uimm_3 << 3 + uimm_2 << 2;
-            c_addi4spn(rdi_rs2i, uimm as u16)
+            c_addi4spn(Reg::compress(rdi_rs2i), uimm as u16)
           }
           _ => unimplemented!(),
         }
@@ -246,13 +246,13 @@ pub fn parse_word(word: u32) -> Instruction {
         let lo_imm = word >> 2 & 0b11111;
         match funct3 {
           0b000 | 0b001 | 0b010 => {
-            let imm = sx8((hi_imm << 5 + lo_imm) as u8, 6);
+            let imm = sext8((hi_imm << 5 + lo_imm) as u8, 6);
             match (funct3, rd, imm) {
               (0b000, 0, _) => c_nop,
-              (0b000, rd, imm) => c_addi(rd, imm),
+              (0b000, rd, imm) => c_addi(Reg::x(rd), imm),
               (0b001, 0, _) => unimplemented!("reserved"),
-              (0b001, rd, imm) => c_addiw(rd, imm),
-              (0b010, rd, imm) => c_li(rd, imm),
+              (0b001, rd, imm) => c_addiw(Reg::x(rd), imm),
+              (0b010, rd, imm) => c_li(Reg::x(rd), imm),
               _ => unreachable!(),
             }
           }
@@ -264,11 +264,11 @@ pub fn parse_word(word: u32) -> Instruction {
               let imm_8_7 = lo_imm >> 1 & 0b11;
               let imm_5 = lo_imm & 1;
               let imm = hi_imm << 9 + imm_8_7 << 7 + imm_6 << 6 + imm_5 << 5 + imm_4 << 4;
-              c_addi16sp(sx16(imm as u16, 10))
+              c_addi16sp(sext16(imm as u16, 10))
             }
             _ => {
               let imm = hi_imm << 17 + lo_imm << 12;
-              c_lui(rd, sx32(imm, 18))
+              c_lui(Reg::x(rd), sext32(imm, 18))
             }
           },
           0b100 => {
@@ -288,14 +288,14 @@ pub fn parse_word(word: u32) -> Instruction {
                   (1, 0b10) => c_or,
                   (1, 0b11) => c_and,
                   _ => unimplemented!("reserved"),
-                })(rdi, rs2i)
+                })(Reg::compress(rdi), Reg::compress(rs2i))
               }
               _ => {
                 let imm = (hi_imm << 5 + lo_imm) as u8;
                 match hi_funct2 {
-                  0b00 => c_srli(rdi, imm),
-                  0b01 => c_srai(rdi, imm),
-                  0b10 => c_andi(rdi, sx8(imm, 6)),
+                  0b00 => c_srli(Reg::compress(rdi), imm),
+                  0b01 => c_srai(Reg::compress(rdi), imm),
+                  0b10 => c_andi(Reg::compress(rdi), sext8(imm, 6)),
                   _ => unimplemented!(),
                 }
               }
@@ -312,7 +312,7 @@ pub fn parse_word(word: u32) -> Instruction {
               + ((lo_imm & 1) << 5)
               + ((rd_rs1 >> 4) << 4)
               + ((lo_imm >> 1 & 0b111) << 1);
-            c_j(sx16(imm, 12))
+            c_j(sext16(imm, 12))
           }
           _ => {
             let imm_4_3 = rd >> 3 & 0b11;
@@ -325,7 +325,7 @@ pub fn parse_word(word: u32) -> Instruction {
               0b110 => c_beqz,
               0b111 => c_bnez,
               _ => unimplemented!(),
-            })(rs1i, sx16(imm as u16, 9))
+            })(Reg::compress(rs1i), sext16(imm as u16, 9))
           }
         }
       }
@@ -336,40 +336,48 @@ pub fn parse_word(word: u32) -> Instruction {
         match funct3 {
           0b000 => {
             let uimm = hi_imm << 5 + rs2;
-            c_slli(rd_rs1, uimm as u8)
+            c_slli(Reg::x(rd_rs1), uimm as u8)
           }
           0b001 | 0b011 => {
             let uimm_8_6 = rs2 as u16 & 0b111;
             let uimm_4_3 = rs2 >> 3;
             let uimm = uimm_8_6 << 6 + hi_imm << 5 + uimm_4_3 << 3;
-            (if funct3 & 0b10 == 0 { c_fldsp } else { c_ldsp })(rd_rs1, uimm)
+            if funct3 & 0b10 == 0 {
+              c_fldsp(FloatReg::f(rd_rs1), uimm)
+            } else {
+              c_ldsp(Reg::x(rd_rs1), uimm)
+            }
           }
           0b010 => {
             let uimm_7_6 = rs2 & 0b11;
             let uimm_4_2 = rs2 >> 2;
             let uimm = uimm_7_6 << 6 + hi_imm << 5 + uimm_4_2 << 2;
-            c_lwsp(rd_rs1, uimm)
+            c_lwsp(Reg::x(rd_rs1), uimm)
           }
           0b100 => match (hi_imm, rd_rs1, rs2) {
             (0, 0, 0) => unimplemented!("reserved"),
-            (0, rs1, 0) => c_jr(rs1),
-            (0, rd, rs2) => c_mv(rd, rs2),
+            (0, rs1, 0) => c_jr(Reg::x(rs1)),
+            (0, rd, rs2) => c_mv(Reg::x(rd), Reg::x(rs2)),
             (1, 0, 0) => c_ebreak,
-            (1, rs1, 0) => c_jalr(rs1),
-            (1, rd, rs2) => c_add(rd, rs2),
+            (1, rs1, 0) => c_jalr(Reg::x(rs1)),
+            (1, rd, rs2) => c_add(Reg::x(rd), Reg::x(rs2)),
             _ => unimplemented!(),
           },
           0b101 | 0b111 => {
             let uimm_4_3 = rd_rs1 >> 3;
             let uimm_8_6 = rd_rs1 as u16 & 0b111;
             let uimm = uimm_8_6 << 6 + hi_imm << 5 + uimm_4_3 << 3;
-            (if funct3 & 0b10 == 0 { c_fsdsp } else { c_sdsp })(rs2, uimm)
+            if funct3 & 0b10 == 0 {
+              c_fsdsp(FloatReg::f(rs2), uimm)
+            } else {
+              c_sdsp(Reg::x(rs2), uimm)
+            }
           }
           0b110 => {
             let uimm_4_2 = rd_rs1 >> 2;
             let uimm_7_6 = rd_rs1 & 0b111;
             let uimm = uimm_7_6 << 6 + hi_imm << 5 + uimm_4_2 << 2;
-            c_swsp(rs2, uimm)
+            c_swsp(Reg::x(rs2), uimm)
           }
           _ => unimplemented!(),
         }
@@ -388,9 +396,9 @@ macro_rules! impl_sign_extend {
   };
 }
 
-impl_sign_extend!(sx8, u8, i8, 8);
-impl_sign_extend!(sx16, u16, i16, 16);
-impl_sign_extend!(sx32, u32, i32, 32);
+impl_sign_extend!(sext8, u8, i8, 8);
+impl_sign_extend!(sext16, u16, i16, 16);
+impl_sign_extend!(sext32, u32, i32, 32);
 
 fn sign_extend_u32(uimm: u32, width: u8) -> u32 {
   assert!(width <= 32);
@@ -401,7 +409,7 @@ fn sign_extend_u32(uimm: u32, width: u8) -> u32 {
 #[rustfmt::skip]
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Register {
+pub enum Reg {
   zero = 0,
   ra,
   sp,
@@ -415,9 +423,9 @@ pub enum Register {
   t3, t4, t5, t6,
 }
 
-impl Register {
+impl Reg {
   #[allow(non_upper_case_globals)]
-  pub const fp: Self = Register::s0;
+  pub const fp: Self = Reg::s0;
 
   pub fn x(n: u8) -> Self {
     assert!(n < 32);
@@ -425,8 +433,34 @@ impl Register {
     unsafe { std::mem::transmute(n) }
   }
 
-  pub fn from_compressed(n: u8) -> Self {
+  pub fn compress(n: u8) -> Self {
     assert!(n < 8);
     Self::x(n + 8)
+  }
+}
+
+#[allow(non_camel_case_types)]
+#[rustfmt::skip]
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FloatReg {
+  ft0 = 0, ft1, ft2, ft3, ft4, ft5, ft6, ft7,
+  fs0, fs1,
+  fa0, fa1,
+  fa2, fa3, fa4, fa5, fa6, fa7,
+  fs2, fs3, fs4, fs5, fs6, fs7, fs8, fs9, fs10, fs11,
+  ft8, ft9, ft10, ft11
+}
+
+impl FloatReg {
+  pub fn f(n: u8) -> Self {
+    assert!(n < 32);
+    // SAFETY: See assert above
+    unsafe { std::mem::transmute(n) }
+  }
+
+  pub fn compress(n: u8) -> Self {
+    assert!(n < 8);
+    Self::f(n + 8)
   }
 }
