@@ -2,12 +2,6 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Instruction {
   // * RV64I *
-  /// - I:   opcode, funct3, rs1, rd,  imm
-  /// - S/B: opcode, funct3, rs1, rs2, imm
-  ISB(u8, u8, u8, u8, u32),
-  /// opcode, rd, imm
-  UJ(u8, u8, u32),
-
   add(Reg, Reg, Reg),
   sub(Reg, Reg, Reg),
   xor(Reg, Reg, Reg),
@@ -18,13 +12,11 @@ pub enum Instruction {
   sra(Reg, Reg, Reg),
   slt(Reg, Reg, Reg),
   sltu(Reg, Reg, Reg),
-
   addw(Reg, Reg, Reg),
   subw(Reg, Reg, Reg),
   sllw(Reg, Reg, Reg),
   srlw(Reg, Reg, Reg),
   sraw(Reg, Reg, Reg),
-
   addi(Reg, Reg, i16),
   xori(Reg, Reg, i16),
   ori(Reg, Reg, i16),
@@ -34,11 +26,42 @@ pub enum Instruction {
   srai(Reg, Reg, u8),
   slti(Reg, Reg, i16),
   sltiu(Reg, Reg, i16),
-
   addiw(Reg, Reg, i16),
   slliw(Reg, Reg, u8),
   srliw(Reg, Reg, u8),
   sraiw(Reg, Reg, u8),
+
+  lb(Reg, i16, Reg),
+  lh(Reg, i16, Reg),
+  lw(Reg, i16, Reg),
+  /// ld rd, imm(rs1)
+  ld(Reg, i16, Reg),
+  lbu(Reg, i16, Reg),
+  lhu(Reg, i16, Reg),
+  lwu(Reg, i16, Reg),
+  /// sb rs1, imm(rs2)
+  sb(Reg, i16, Reg),
+  sh(Reg, i16, Reg),
+  sw(Reg, i16, Reg),
+  sd(Reg, i16, Reg),
+  /// lui rd, imm
+  lui(Reg, i32),
+
+  /// auipc rd, imm
+  auipc(Reg, i32),
+  /// beq rs1, rs2, label
+  beq(Reg, Reg, i16),
+  bne(Reg, Reg, i16),
+  blt(Reg, Reg, i16),
+  bge(Reg, Reg, i16),
+  bltu(Reg, Reg, i16),
+  bgeu(Reg, Reg, i16),
+  /// jal rd, label
+  jal(Reg, i32),
+  /// jalr rd, imm(rs1)
+  jalr(Reg, i16, Reg),
+  ecall,
+  ebreak,
 
   // * RV64C *
   /// c.fld rd', uimm(rs1')
@@ -143,13 +166,13 @@ pub fn parse_word(word: u32) -> Instruction {
         (5, 32) => sraw,
         _ => unimplemented!(),
       })(Reg::x(rd), Reg::x(rs1), Reg::x(rs2)),
-      // I-type, OP-IMM | OP-IMM32 | LOAD | SYSTEM | STORE
-      op @ (0b00100 | 0b00110 | 0b00000 | 0b11100) => {
+      // I-type, OP-IMM | OP-IMM32 | LOAD
+      op @ (0b00100 | 0b00110 | 0b00000) => {
         let imm_11_5 = funct7 as u16;
         let imm = imm_11_5 << 5 + rs2;
-        (match op {
+        match op {
           // OP-IMM
-          0b00100 => match funct3 {
+          0b00100 => (match funct3 {
             0 => addi,
             4 => xori,
             6 => ori,
@@ -160,40 +183,99 @@ pub fn parse_word(word: u32) -> Instruction {
             2 => slti,
             3 => sltiu,
             _ => unimplemented!(),
-          },
+          })(Reg::x(rd), Reg::x(rs1), sext16(imm, 12)),
           // OP-IMM32
-          0b00110 => match (funct3, imm_11_5) {
-            (0, _) => addiw,
-            (1, 0) => return slliw(Reg::x(rd), Reg::x(rs1), rs2),
-            (5, 0) => return srliw(Reg::x(rd), Reg::x(rs1), rs2),
-            (5, 32) => return sraiw(Reg::x(rd), Reg::x(rs1), rs2),
+          0b00110 => (match (funct3, imm_11_5) {
+            (0, _) => return addiw(Reg::x(rd), Reg::x(rs1), sext16(imm, 12)),
+            (1, 0) => slliw,
+            (5, 0) => srliw,
+            (5, 32) => sraiw,
             _ => unimplemented!(),
-          },
+          })(Reg::x(rd), Reg::x(rs1), rs2),
+          // LOAD
+          0b00000 => (match funct3 {
+            0b000 => lb,
+            0b001 => lh,
+            0b010 => lw,
+            0b011 => ld,
+            0b100 => lbu,
+            0b101 => lhu,
+            0b110 => lwu,
+            _ => unimplemented!(),
+          })(Reg::x(rd), sext16(imm, 12), Reg::x(rs1)),
           _ => unreachable!(),
-        })(Reg::x(rd), Reg::x(rs1), sext16(imm, 12))
+        }
       }
+      // S-type, STORE
+      0b01000 => {
+        let imm_11_5 = funct7 as u16;
+        let imm = imm_11_5 << 5 + rd;
+        (match funct3 {
+          0b000 => sb,
+          0b001 => sh,
+          0b010 => sw,
+          0b011 => sd,
+          _ => unimplemented!(),
+        })(Reg::x(rs1), sext16(imm, 12), Reg::x(rs2))
+      }
+      // I-type(?), SYSTEM
+      0b11100 => match (funct7, rs2, rs1, funct3, rd) {
+        (0, 0, 0, 0, 0) => ecall,
+        (1, 0, 0, 0, 0) => ebreak,
+        _ => unimplemented!(),
+      },
       // TODO: finish off
       // BRANCH
       0b11000 => {
-        let (funct7, rd) = (funct7 as u32, rd as u32);
+        let funct7 = funct7 as u16;
         let (imm_12, imm_10_5) = (funct7 >> 6, funct7 & 0b111111);
         let (imm_4_1, imm_11) = (rd >> 1 & 0b1111, rd & 1);
         let imm = imm_12 << 12 + imm_11 << 11 + imm_10_5 << 5 + imm_4_1 << 1;
-        ISB(opcode, funct3, rs1, rs2, sign_extend_u32(imm, 13))
+        (match funct3 {
+          0b000 => beq,
+          0b001 => bne,
+          0b100 => blt,
+          0b101 => bge,
+          0b110 => bltu,
+          0b111 => bgeu,
+          _ => unimplemented!(),
+        })(Reg::x(rs1), Reg::x(rs2), sext16(imm, 13))
       }
-      // LUI | AUIPC
-      0b01101 | 0b00101 => {
+      // lui | auipc
+      op @ (0b01101 | 0b00101) => {
         let (imm_31_25, imm_24_20, imm_19_15, imm_14_12) =
           (funct7 as u32, rs2 as u32, rs1 as u32, funct3 as u32);
-        // Already 32-bit, no need to sign extend
         let imm = imm_31_25 << 25 + imm_24_20 << 20 + imm_19_15 << 15 + imm_14_12 << 12;
-        UJ(opcode, rd, imm)
+        (match op {
+          0b01101 => lui,
+          0b00101 => auipc,
+          _ => unimplemented!(),
+        })(Reg::x(rd), imm as i32) // Already 32-bit, no need to sign extend
       }
+      // jal
+      0b11011 => {
+        let (funct7, rs2, imm_19_15, imm_14_12) =
+          (funct7 as u32, rs2 as u32, rs1 as u32, funct3 as u32);
+        let imm = ((funct7 >> 6) << 20)
+          + (imm_19_15 << 15)
+          + (imm_14_12 << 12)
+          + ((rs2 & 1) << 11)
+          + ((funct7 & 0b111111) << 5)
+          + ((rs2 >> 1) << 1);
+        jal(Reg::x(rd), sext32(imm, 21))
+      }
+      // jalr
+      0b11001 => {
+        let imm_11_5 = funct7 as u16;
+        let imm = imm_11_5 << 5 + rs2;
+        jalr(Reg::x(rd), sext16(imm, 20), Reg::x(rs1))
+      }
+      // TODO: fence, fence.tso
       _ => unimplemented!(),
     }
   } else {
     // 16-bit
-    // Although no F/D implementation now, C.F* is still parsed
+    // Although no F/D implementation now, c.f* is still parsed
     let word = word & (u16::MAX as u32);
     let op = (word & 0b11) as u8;
 
@@ -399,11 +481,6 @@ macro_rules! impl_sign_extend {
 impl_sign_extend!(sext8, u8, i8, 8);
 impl_sign_extend!(sext16, u16, i16, 16);
 impl_sign_extend!(sext32, u32, i32, 32);
-
-fn sign_extend_u32(uimm: u32, width: u8) -> u32 {
-  assert!(width <= 32);
-  (0u32.wrapping_sub(uimm >> width - 1) << width) + uimm
-}
 
 #[allow(non_camel_case_types)]
 #[rustfmt::skip]
