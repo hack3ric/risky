@@ -62,6 +62,27 @@ pub enum Instruction {
   jalr(Reg, i16, Reg),
   ecall,
   ebreak,
+  /// fence pred, succ
+  fence(u8),
+  fence_tso,
+
+  // * Zifencei *
+  fence_i,
+
+  // * RV64M *
+  mul(Reg, Reg, Reg),
+  mulh(Reg, Reg, Reg),
+  mulhu(Reg, Reg, Reg),
+  mulhsu(Reg, Reg, Reg),
+  mulw(Reg, Reg, Reg),
+  div(Reg, Reg, Reg),
+  divu(Reg, Reg, Reg),
+  rem(Reg, Reg, Reg),
+  remu(Reg, Reg, Reg),
+  divw(Reg, Reg, Reg),
+  divuw(Reg, Reg, Reg),
+  remw(Reg, Reg, Reg),
+  remuw(Reg, Reg, Reg),
 
   // * RV64C *
   /// c.fld rd', uimm(rs1')
@@ -224,8 +245,7 @@ pub fn parse_word(word: u32) -> Instruction {
         (1, 0, 0, 0, 0) => ebreak,
         _ => unimplemented!(),
       },
-      // TODO: finish off
-      // BRANCH
+      // B-type, BRANCH
       0b11000 => {
         let funct7 = funct7 as u16;
         let (imm_12, imm_10_5) = (funct7 >> 6, funct7 & 0b111111);
@@ -252,7 +272,7 @@ pub fn parse_word(word: u32) -> Instruction {
           _ => unimplemented!(),
         })(Reg::x(rd), imm as i32) // Already 32-bit, no need to sign extend
       }
-      // jal
+      // J-type, jal
       0b11011 => {
         let (funct7, rs2, imm_19_15, imm_14_12) =
           (funct7 as u32, rs2 as u32, rs1 as u32, funct3 as u32);
@@ -264,13 +284,23 @@ pub fn parse_word(word: u32) -> Instruction {
           + ((rs2 >> 1) << 1);
         jal(Reg::x(rd), sext32(imm, 21))
       }
-      // jalr
+      // R-type, jalr
       0b11001 => {
         let imm_11_5 = funct7 as u16;
         let imm = imm_11_5 << 5 + rs2;
         jalr(Reg::x(rd), sext16(imm, 20), Reg::x(rs1))
       }
-      // TODO: fence, fence.tso
+      0b00011 => {
+        use fence_op::*;
+        let fm = word >> 28;
+        let io = (word >> 20) as u8;
+        match (fm, io, rs1, funct3, rd) {
+          (0b0000, 0, 0, 1, 0) => fence_i,
+          (0b0000, io, _, 0, _) => fence(io),
+          (0b1000, PR | PW | SR | SW, 0, 0, 0) => fence_tso,
+          _ => unimplemented!(),
+        }
+      }
       _ => unimplemented!(),
     }
   } else {
@@ -540,4 +570,15 @@ impl FloatReg {
     assert!(n < 8);
     Self::f(n + 8)
   }
+}
+
+pub mod fence_op {
+  pub const PI: u8 = 1 << 7;
+  pub const PO: u8 = 1 << 6;
+  pub const PR: u8 = 1 << 5;
+  pub const PW: u8 = 1 << 4;
+  pub const SI: u8 = 1 << 3;
+  pub const SO: u8 = 1 << 2;
+  pub const SR: u8 = 1 << 1;
+  pub const SW: u8 = 1;
 }
