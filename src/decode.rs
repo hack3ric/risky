@@ -190,7 +190,7 @@ pub fn parse_word(word: u32) -> Instruction {
       // I-type, OP-IMM | OP-IMM32 | LOAD
       op @ (0b00100 | 0b00110 | 0b00000) => {
         let imm_11_5 = funct7 as u16;
-        let imm = imm_11_5 << 5 + rs2;
+        let imm = (imm_11_5 << 5) + rs2 as u16;
         match op {
           // OP-IMM
           0b00100 => (match funct3 {
@@ -230,7 +230,7 @@ pub fn parse_word(word: u32) -> Instruction {
       // S-type, STORE
       0b01000 => {
         let imm_11_5 = funct7 as u16;
-        let imm = imm_11_5 << 5 + rd;
+        let imm = (imm_11_5 << 5) + rd as u16;
         (match funct3 {
           0b000 => sb,
           0b001 => sh,
@@ -247,10 +247,10 @@ pub fn parse_word(word: u32) -> Instruction {
       },
       // B-type, BRANCH
       0b11000 => {
-        let funct7 = funct7 as u16;
+        let (funct7, rd) = (funct7 as u16, rd as u16);
         let (imm_12, imm_10_5) = (funct7 >> 6, funct7 & 0b111111);
         let (imm_4_1, imm_11) = (rd >> 1 & 0b1111, rd & 1);
-        let imm = imm_12 << 12 + imm_11 << 11 + imm_10_5 << 5 + imm_4_1 << 1;
+        let imm = (imm_12 << 12) + (imm_11 << 11) + (imm_10_5 << 5) + (imm_4_1 << 1);
         (match funct3 {
           0b000 => beq,
           0b001 => bne,
@@ -265,7 +265,7 @@ pub fn parse_word(word: u32) -> Instruction {
       op @ (0b01101 | 0b00101) => {
         let (imm_31_25, imm_24_20, imm_19_15, imm_14_12) =
           (funct7 as u32, rs2 as u32, rs1 as u32, funct3 as u32);
-        let imm = imm_31_25 << 25 + imm_24_20 << 20 + imm_19_15 << 15 + imm_14_12 << 12;
+        let imm = (imm_31_25 << 25) + (imm_24_20 << 20) + (imm_19_15 << 15) + (imm_14_12 << 12);
         (match op {
           0b01101 => lui,
           0b00101 => auipc,
@@ -287,7 +287,7 @@ pub fn parse_word(word: u32) -> Instruction {
       // R-type, jalr
       0b11001 => {
         let imm_11_5 = funct7 as u16;
-        let imm = imm_11_5 << 5 + rs2;
+        let imm = (imm_11_5 << 5) + rs2 as u16;
         jalr(Reg::x(rd), sext16(imm, 20), Reg::x(rs1))
       }
       0b00011 => {
@@ -319,7 +319,7 @@ pub fn parse_word(word: u32) -> Instruction {
           0b01 | 0b11 => {
             let uimm_5_3 = word >> 10 & 0b111;
             let uimm_7_6 = word >> 5 & 0b11;
-            let uimm = (uimm_7_6 << 6 + uimm_5_3 << 3) as u8;
+            let uimm = ((uimm_7_6 << 6) + (uimm_5_3 << 3)) as u8;
             match funct3 {
               0b001 => c_fld(FloatReg::compress(rdi_rs2i), uimm, Reg::compress(rs1i)),
               0b011 => c_ld(Reg::compress(rdi_rs2i), uimm, Reg::compress(rs1i)),
@@ -333,7 +333,7 @@ pub fn parse_word(word: u32) -> Instruction {
             let uimm_5_3 = word >> 10 & 0b111;
             let uimm_2 = word >> 6 & 1;
             let uimm_6 = word >> 5 & 1;
-            let uimm = (uimm_6 << 6 + uimm_5_3 << 3 + uimm_2 << 2) as u8;
+            let uimm = ((uimm_6 << 6) + (uimm_5_3 << 3) + (uimm_2 << 2)) as u8;
             if funct3 & 0b100 == 0 {
               c_lw(Reg::compress(rdi_rs2i), uimm, Reg::compress(rs1i))
             } else {
@@ -346,7 +346,7 @@ pub fn parse_word(word: u32) -> Instruction {
             let uimm_9_6 = word >> 7 & 0b1111;
             let uimm_2 = word >> 6 & 1;
             let uimm_3 = word >> 5 & 1;
-            let uimm = uimm_9_6 << 6 + uimm_5_4 << 4 + uimm_3 << 3 + uimm_2 << 2;
+            let uimm = (uimm_9_6 << 6) + (uimm_5_4 << 4) + (uimm_3 << 3) + (uimm_2 << 2);
             c_addi4spn(Reg::compress(rdi_rs2i), uimm as u16)
           }
           _ => unimplemented!(),
@@ -358,7 +358,7 @@ pub fn parse_word(word: u32) -> Instruction {
         let lo_imm = word >> 2 & 0b11111;
         match funct3 {
           0b000 | 0b001 | 0b010 => {
-            let imm = sext8((hi_imm << 5 + lo_imm) as u8, 6);
+            let imm = sext8(((hi_imm << 5) + lo_imm) as u8, 6);
             match (funct3, rd, imm) {
               (0b000, 0, _) => c_nop,
               (0b000, rd, imm) => c_addi(Reg::x(rd), imm),
@@ -375,11 +375,11 @@ pub fn parse_word(word: u32) -> Instruction {
               let imm_6 = lo_imm >> 3 & 1;
               let imm_8_7 = lo_imm >> 1 & 0b11;
               let imm_5 = lo_imm & 1;
-              let imm = hi_imm << 9 + imm_8_7 << 7 + imm_6 << 6 + imm_5 << 5 + imm_4 << 4;
+              let imm = (hi_imm << 9) + (imm_8_7 << 7) + (imm_6 << 6) + (imm_5 << 5) + (imm_4 << 4);
               c_addi16sp(sext16(imm as u16, 10))
             }
             _ => {
-              let imm = hi_imm << 17 + lo_imm << 12;
+              let imm = (hi_imm << 17) + (lo_imm << 12);
               c_lui(Reg::x(rd), sext32(imm, 18))
             }
           },
@@ -427,12 +427,12 @@ pub fn parse_word(word: u32) -> Instruction {
             c_j(sext16(imm, 12))
           }
           _ => {
-            let imm_4_3 = rd >> 3 & 0b11;
             let rs1i = rd & 0b111;
-            let imm_7_6 = lo_imm >> 3 & 0b11;
-            let imm_2_1 = lo_imm >> 1 & 0b11;
-            let imm_5 = lo_imm & 1;
-            let imm = hi_imm << 8 + imm_7_6 << 6 + imm_5 << 5 + imm_4_3 << 3 + imm_2_1 << 1;
+            let imm = ((word >> 12 & 1) << 8)
+              + ((lo_imm >> 3 & 0b11) << 6)
+              + ((lo_imm & 1) << 5)
+              + ((rd >> 3 & 0b11) << 3) as u32
+              + ((lo_imm >> 1 & 0b11) << 1);
             (match funct3 {
               0b110 => c_beqz,
               0b111 => c_bnez,
@@ -442,18 +442,19 @@ pub fn parse_word(word: u32) -> Instruction {
         }
       }
       2 => {
-        let hi_imm = word >> 12 & 1;
+        let hi_imm = (word >> 12 & 1) as u16;
         let rd_rs1 = (word >> 7 & 0b11111) as u8;
         let rs2 = (word >> 2 & 0b11111) as u8;
         match funct3 {
           0b000 => {
-            let uimm = hi_imm << 5 + rs2;
-            c_slli(Reg::x(rd_rs1), uimm as u8)
+            let uimm = (hi_imm << 5) as u8 + rs2;
+            c_slli(Reg::x(rd_rs1), uimm)
           }
           0b001 | 0b011 => {
-            let uimm_8_6 = rs2 as u16 & 0b111;
+            let rs2 = rs2 as u16;
+            let uimm_8_6 = rs2 & 0b111;
             let uimm_4_3 = rs2 >> 3;
-            let uimm = uimm_8_6 << 6 + hi_imm << 5 + uimm_4_3 << 3;
+            let uimm = (uimm_8_6 << 6) + (hi_imm << 5) + (uimm_4_3 << 3);
             if funct3 & 0b10 == 0 {
               c_fldsp(FloatReg::f(rd_rs1), uimm)
             } else {
@@ -463,7 +464,7 @@ pub fn parse_word(word: u32) -> Instruction {
           0b010 => {
             let uimm_7_6 = rs2 & 0b11;
             let uimm_4_2 = rs2 >> 2;
-            let uimm = uimm_7_6 << 6 + hi_imm << 5 + uimm_4_2 << 2;
+            let uimm = (uimm_7_6 << 6) + (hi_imm << 5) as u8 + (uimm_4_2 << 2);
             c_lwsp(Reg::x(rd_rs1), uimm)
           }
           0b100 => match (hi_imm, rd_rs1, rs2) {
@@ -476,9 +477,10 @@ pub fn parse_word(word: u32) -> Instruction {
             _ => unimplemented!(),
           },
           0b101 | 0b111 => {
+            let rd_rs1 = rd_rs1 as u16;
             let uimm_4_3 = rd_rs1 >> 3;
-            let uimm_8_6 = rd_rs1 as u16 & 0b111;
-            let uimm = uimm_8_6 << 6 + hi_imm << 5 + uimm_4_3 << 3;
+            let uimm_8_6 = rd_rs1 & 0b111;
+            let uimm = (uimm_8_6 << 6) + (hi_imm << 5) + (uimm_4_3 << 3);
             if funct3 & 0b10 == 0 {
               c_fsdsp(FloatReg::f(rs2), uimm)
             } else {
@@ -488,7 +490,7 @@ pub fn parse_word(word: u32) -> Instruction {
           0b110 => {
             let uimm_4_2 = rd_rs1 >> 2;
             let uimm_7_6 = rd_rs1 & 0b111;
-            let uimm = uimm_7_6 << 6 + hi_imm << 5 + uimm_4_2 << 2;
+            let uimm = (uimm_7_6 << 6) + (hi_imm << 5) as u8 + (uimm_4_2 << 2);
             c_swsp(Reg::x(rs2), uimm)
           }
           _ => unimplemented!(),
