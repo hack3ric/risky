@@ -68,14 +68,12 @@ pub enum Instruction {
   fence_i,
 }
 
-pub fn parse_word(word: u32) -> (Instruction, bool) {
+pub fn decode_word(word: u32) -> (Instruction, bool) {
   use Instruction::*;
-  use Reg::*;
-
-  let compressed;
-  let insn = if word & 0b11 == 0b11 && word & 0b11100 != 0b11100 {
+  if let Some(insn) = decode_compressed(word as u16) {
+    (insn, true)
+  } else {
     // 32-bit
-    compressed = false;
     let funct7 = (word >> 25) as u8;
     let rs2 = (word >> 20 & 0b11111) as u8;
     let rs1 = (word >> 15 & 0b11111) as u8;
@@ -83,7 +81,7 @@ pub fn parse_word(word: u32) -> (Instruction, bool) {
     let rd = (word >> 7 & 0b11111) as u8;
     let opcode = (word & 0b1111111) as u8;
     let (rs2r, rs1r, rdr) = (Reg::x(rs2), Reg::x(rs1), Reg::x(rd));
-    match opcode >> 2 {
+    let insn = match opcode >> 2 {
       // R-type, OP
       0b01100 => (match (funct3, funct7) {
         (0, 0) => add,
@@ -225,213 +223,218 @@ pub fn parse_word(word: u32) -> (Instruction, bool) {
         }
       }
       _ => unimplemented!(),
-    }
-  } else {
-    // 16-bit
-    compressed = true;
-    let word = word & u16::MAX as u32;
-    let op = (word & 0b11) as u8;
+    };
+    (insn, false)
+  }
+}
 
-    let funct3 = (word >> 13 & 0b111) as u8;
-    match op {
-      0 => {
-        let rs1i = (word >> 7 & 0b111) as u8;
-        let rdi_rs2i = (word >> 2 & 0b111) as u8;
-        let (rdr_rs2r, rs1r) = (Reg::c(rdi_rs2i), Reg::c(rs1i));
-        let (rdr, rs2r) = (rdr_rs2r, rdr_rs2r);
-        match funct3 & 0b11 {
-          // c.fld/c.ld | c.fsd/c.sd
-          0b01 | 0b11 => {
-            let uimm_5_3 = word >> 10 & 0b111;
-            let uimm_7_6 = word >> 5 & 0b11;
-            let uimm = ((uimm_7_6 << 6) + (uimm_5_3 << 3)) as u8;
-            match funct3 {
-              // 0b001 => c_fld(FloatReg::compress(rdi_rs2i), uimm, Reg::compress(rs1i)),
-              0b011 => ld(rdr, uimm as i16, rs1r),
-              // 0b101 => c_fsd(FloatReg::compress(rs1i), uimm, Reg::compress(rdi_rs2i)),
-              0b111 => sd(rs2r, uimm as i16, rs1r),
-              0b001 | 0b101 => unimplemented!("floating point"),
-              _ => unreachable!(),
-            }
+pub fn decode_compressed(half: u16) -> Option<Instruction> {
+  use Instruction::*;
+  use Reg::*;
+
+  if half & 0b11 == 0b11 && half & 0b11100 != 0b11100 {
+    return None;
+  }
+  let op = (half & 0b11) as u8;
+  let funct3 = (half >> 13 & 0b111) as u8;
+  let insn = match op {
+    0 => {
+      let rs1i = (half >> 7 & 0b111) as u8;
+      let rdi_rs2i = (half >> 2 & 0b111) as u8;
+      let (rdr_rs2r, rs1r) = (Reg::c(rdi_rs2i), Reg::c(rs1i));
+      let (rdr, rs2r) = (rdr_rs2r, rdr_rs2r);
+      match funct3 & 0b11 {
+        // c.fld/c.ld | c.fsd/c.sd
+        0b01 | 0b11 => {
+          let uimm_5_3 = half >> 10 & 0b111;
+          let uimm_7_6 = half >> 5 & 0b11;
+          let uimm = ((uimm_7_6 << 6) + (uimm_5_3 << 3)) as u8;
+          match funct3 {
+            // 0b001 => c_fld(FloatReg::compress(rdi_rs2i), uimm, Reg::compress(rs1i)),
+            0b011 => ld(rdr, uimm as i16, rs1r),
+            // 0b101 => c_fsd(FloatReg::compress(rs1i), uimm, Reg::compress(rdi_rs2i)),
+            0b111 => sd(rs2r, uimm as i16, rs1r),
+            0b001 | 0b101 => unimplemented!("floating point"),
+            _ => unreachable!(),
           }
-          // c.lw/c.sw
-          0b10 => {
-            let uimm_5_3 = word >> 10 & 0b111;
-            let uimm_2 = word >> 6 & 1;
-            let uimm_6 = word >> 5 & 1;
-            let uimm = ((uimm_6 << 6) + (uimm_5_3 << 3) + (uimm_2 << 2)) as i16;
-            (if funct3 & 0b100 == 0 { lw } else { sw })(rdr_rs2r, uimm, rs1r)
-          }
-          // c.addi4spn
-          _ if funct3 == 0b000 => {
-            let uimm_5_4 = word >> 11 & 0b11;
-            let uimm_9_6 = word >> 7 & 0b1111;
-            let uimm_2 = word >> 6 & 1;
-            let uimm_3 = word >> 5 & 1;
-            let uimm = (uimm_9_6 << 6) + (uimm_5_4 << 4) + (uimm_3 << 3) + (uimm_2 << 2);
-            if uimm == 0 {
-              unimplemented!("reserved");
-            }
-            addi(rdr, Reg::sp, uimm as i16)
-          }
-          _ => unimplemented!(),
         }
-      }
-      1 => {
-        let hi_imm = word >> 12 & 1;
-        let rd = (word >> 7 & 0b11111) as u8;
-        let lo_imm = word >> 2 & 0b11111;
-        let rdr = Reg::x(rd);
-        match funct3 {
-          0b000 | 0b001 | 0b010 => {
-            let imm = sext16(((hi_imm << 5) + lo_imm) as u16, 6);
-            match (funct3, rd, imm) {
-              (0b001, 0, _) => unimplemented!("reserved"),
-              (0b000, 0, _) => addi(zero, zero, 0),  // c.nop
-              (0b000, _, _) => addi(rdr, rdr, imm),  // c.addi
-              (0b001, _, _) => addiw(rdr, rdr, imm), // c.addiw
-              (0b010, _, _) => addi(rdr, zero, imm), // cli
-              _ => unreachable!(),
-            }
+        // c.lw/c.sw
+        0b10 => {
+          let uimm_5_3 = half >> 10 & 0b111;
+          let uimm_2 = half >> 6 & 1;
+          let uimm_6 = half >> 5 & 1;
+          let uimm = ((uimm_6 << 6) + (uimm_5_3 << 3) + (uimm_2 << 2)) as i16;
+          (if funct3 & 0b100 == 0 { lw } else { sw })(rdr_rs2r, uimm, rs1r)
+        }
+        // c.addi4spn
+        _ if funct3 == 0b000 => {
+          let uimm_5_4 = half >> 11 & 0b11;
+          let uimm_9_6 = half >> 7 & 0b1111;
+          let uimm_2 = half >> 6 & 1;
+          let uimm_3 = half >> 5 & 1;
+          let uimm = (uimm_9_6 << 6) + (uimm_5_4 << 4) + (uimm_3 << 3) + (uimm_2 << 2);
+          if uimm == 0 {
+            unimplemented!("reserved");
           }
-          0b011 => match rd {
-            0 => unimplemented!("reserved"),
-            2 => {
-              let imm = (hi_imm << 9)
-                + ((lo_imm >> 1 & 0b11) << 7)
-                + ((lo_imm >> 3 & 1) << 6)
-                + ((lo_imm & 1) << 5)
-                + ((lo_imm >> 4) << 4);
-              addi(Reg::sp, Reg::sp, sext16(imm as u16, 10)) // c.addi16sp
+          addi(rdr, Reg::sp, uimm as i16)
+        }
+        _ => unimplemented!(),
+      }
+    }
+    1 => {
+      let hi_imm = half >> 12 & 1;
+      let rd = (half >> 7 & 0b11111) as u8;
+      let lo_imm = half >> 2 & 0b11111;
+      let rdr = Reg::x(rd);
+      match funct3 {
+        0b000 | 0b001 | 0b010 => {
+          let imm = sext16(((hi_imm << 5) + lo_imm) as u16, 6);
+          match (funct3, rd, imm) {
+            (0b001, 0, _) => unimplemented!("reserved"),
+            (0b000, 0, _) => addi(zero, zero, 0),  // c.nop
+            (0b000, _, _) => addi(rdr, rdr, imm),  // c.addi
+            (0b001, _, _) => addiw(rdr, rdr, imm), // c.addiw
+            (0b010, _, _) => addi(rdr, zero, imm), // cli
+            _ => unreachable!(),
+          }
+        }
+        0b011 => match rd {
+          0 => unimplemented!("reserved"),
+          2 => {
+            let imm = (hi_imm << 9)
+              + ((lo_imm >> 1 & 0b11) << 7)
+              + ((lo_imm >> 3 & 1) << 6)
+              + ((lo_imm & 1) << 5)
+              + ((lo_imm >> 4) << 4);
+            addi(Reg::sp, Reg::sp, sext16(imm as u16, 10)) // c.addi16sp
+          }
+          _ => {
+            let imm = ((hi_imm as u32) << 17) + (lo_imm << 12) as u32;
+            lui(rdr, sext32(imm, 18)) // c.lui
+          }
+        },
+        0b100 => {
+          let hi_funct2 = rd >> 3 & 0b11;
+          let rdr = Reg::c(rd & 0b111);
+          match hi_funct2 {
+            0b11 => {
+              let funct2 = lo_imm >> 3;
+              let rs2i = (lo_imm & 0b111) as u8;
+              (match (hi_imm, funct2) {
+                (0, 0b00) => sub,
+                (0, 0b01) => xor,
+                (0, 0b10) => or,
+                (0, 0b11) => and,
+                (1, 0b00) => subw,
+                (1, 0b01) => addw,
+                (1, 0b10) => or,
+                (1, 0b11) => and,
+                _ => unimplemented!("reserved"),
+              })(rdr, rdr, Reg::c(rs2i))
             }
             _ => {
-              let imm = (hi_imm << 17) + (lo_imm << 12);
-              lui(rdr, sext32(imm, 18)) // c.lui
-            }
-          },
-          0b100 => {
-            let hi_funct2 = rd >> 3 & 0b11;
-            let rdr = Reg::c(rd & 0b111);
-            match hi_funct2 {
-              0b11 => {
-                let funct2 = lo_imm >> 3;
-                let rs2i = (lo_imm & 0b111) as u8;
-                (match (hi_imm, funct2) {
-                  (0, 0b00) => sub,
-                  (0, 0b01) => xor,
-                  (0, 0b10) => or,
-                  (0, 0b11) => and,
-                  (1, 0b00) => subw,
-                  (1, 0b01) => addw,
-                  (1, 0b10) => or,
-                  (1, 0b11) => and,
-                  _ => unimplemented!("reserved"),
-                })(rdr, rdr, Reg::c(rs2i))
-              }
-              _ => {
-                let imm = (hi_imm << 5 + lo_imm) as u8;
-                match hi_funct2 {
-                  0b00 => srli(rdr, rdr, imm),                   // c.srli
-                  0b01 => srai(rdr, rdr, imm),                   // c.srai
-                  0b10 => andi(rdr, rdr, sext16(imm as u16, 6)), // c.andi
-                  _ => unimplemented!(),
-                }
+              let imm = (hi_imm << 5 + lo_imm) as u8;
+              match hi_funct2 {
+                0b00 => srli(rdr, rdr, imm),                   // c.srli
+                0b01 => srai(rdr, rdr, imm),                   // c.srai
+                0b10 => andi(rdr, rdr, sext16(imm as u16, 6)), // c.andi
+                _ => unimplemented!(),
               }
             }
-          }
-          0b101 => {
-            // inst[12:2] = imm[11|4|9:8|10|6|7|3:1|5]
-            let (hi_imm, rd_rs1, lo_imm) = (hi_imm as u32, rd as u32, lo_imm as u32);
-            let imm = (hi_imm << 11)
-              + ((rd_rs1 >> 1 & 1) << 10)
-              + ((rd_rs1 >> 2 & 0b11) << 8)
-              + ((lo_imm >> 4) << 7)
-              + ((rd_rs1 & 1) << 6)
-              + ((lo_imm & 1) << 5)
-              + ((rd_rs1 >> 4) << 4)
-              + ((lo_imm >> 1 & 0b111) << 1);
-            jal(zero, sext32(imm, 12)) // c.j
-          }
-          // c.beqz/c.bnez
-          _ => {
-            let rs1r = Reg::c(rd & 0b111);
-            let imm = ((word >> 12 & 1) << 8)
-              + ((lo_imm >> 3 & 0b11) << 6)
-              + ((lo_imm & 1) << 5)
-              + ((rd >> 3 & 0b11) << 3) as u32
-              + ((lo_imm >> 1 & 0b11) << 1);
-            (match funct3 {
-              0b110 => beq,
-              0b111 => bne,
-              _ => unimplemented!(),
-            })(rs1r, zero, sext16(imm as u16, 9))
           }
         }
-      }
-      2 => {
-        let hi_imm = (word >> 12 & 1) as u16;
-        let rd_rs1 = (word >> 7 & 0b11111) as u8;
-        let rs2 = (word >> 2 & 0b11111) as u8;
-        let (rdr_rs1r, rs2r) = (Reg::x(rd_rs1), Reg::x(rs2));
-        let (rdr, rs1r) = (rdr_rs1r, rdr_rs1r);
-        match funct3 {
-          0b000 => {
-            let uimm = (hi_imm << 5) as u8 + rs2;
-            slli(rdr, rdr, uimm) // c.slli
-          }
-          0b010 | 0b011 if rd_rs1 == 0 => unimplemented!("reserved"),
-          0b001 | 0b011 => {
-            let rs2 = rs2 as u16;
-            let uimm_8_6 = rs2 & 0b111;
-            let uimm_4_3 = rs2 >> 3;
-            let uimm = (uimm_8_6 << 6) + (hi_imm << 5) + (uimm_4_3 << 3);
-            if funct3 & 0b10 == 0 {
-              // c_fldsp(FloatReg::f(rd_rs1), uimm)
-              todo!("floating point")
-            } else {
-              ld(rdr, uimm as i16, sp) // c.ldsp
-            }
-          }
-          0b010 => {
-            let uimm_7_6 = rs2 & 0b11;
-            let uimm_4_2 = rs2 >> 2;
-            let uimm = (uimm_7_6 << 6) + (hi_imm << 5) as u8 + (uimm_4_2 << 2);
-            lw(rdr, uimm as i16, sp) // c.lwsp
-          }
-          0b100 => match (hi_imm, rd_rs1, rs2) {
-            (0, 0, 0) => unimplemented!("reserved"),
-            (0, _, 0) => jalr(zero, 0, rs1r),  // c.jr
-            (0, _, _) => add(rdr, zero, rs2r), // c.mv
-            (1, 0, 0) => ebreak,                    // c.ebreak
-            (1, _, 0) => jalr(ra, 0, rs1r),    // c.jalr
-            (1, _, _) => add(rdr, rdr, rs2r),       // c.add
+        0b101 => {
+          // inst[12:2] = imm[11|4|9:8|10|6|7|3:1|5]
+          let (hi_imm, rd_rs1, lo_imm) = (hi_imm as u32, rd as u32, lo_imm as u32);
+          let imm = (hi_imm << 11)
+            + ((rd_rs1 >> 1 & 1) << 10)
+            + ((rd_rs1 >> 2 & 0b11) << 8)
+            + ((lo_imm >> 4) << 7)
+            + ((rd_rs1 & 1) << 6)
+            + ((lo_imm & 1) << 5)
+            + ((rd_rs1 >> 4) << 4)
+            + ((lo_imm >> 1 & 0b111) << 1);
+          jal(zero, sext32(imm, 12)) // c.j
+        }
+        // c.beqz/c.bnez
+        _ => {
+          let rs1r = Reg::c(rd & 0b111);
+          let imm = ((half >> 12 & 1) << 8)
+            + ((lo_imm >> 3 & 0b11) << 6)
+            + ((lo_imm & 1) << 5)
+            + ((rd >> 3 & 0b11) << 3) as u16
+            + ((lo_imm >> 1 & 0b11) << 1);
+          (match funct3 {
+            0b110 => beq,
+            0b111 => bne,
             _ => unimplemented!(),
-          },
-          0b101 | 0b111 => {
-            let rd_rs1 = rd_rs1 as u16;
-            let uimm_4_3 = rd_rs1 >> 3;
-            let uimm_8_6 = rd_rs1 & 0b111;
-            let uimm = (uimm_8_6 << 6) + (hi_imm << 5) + (uimm_4_3 << 3);
-            if funct3 & 0b10 == 0 {
-              // c_fsdsp(FloatReg::f(rs2), uimm)
-              todo!("floating point")
-            } else {
-              sd(rs2r, uimm as i16, sp) // c.sdsp
-            }
-          }
-          0b110 => {
-            let uimm_4_2 = rd_rs1 >> 2;
-            let uimm_7_6 = rd_rs1 & 0b111;
-            let uimm = (uimm_7_6 << 6) + (hi_imm << 5) as u8 + (uimm_4_2 << 2);
-            sw(rs2r, uimm as i16, sp) // c.swsp
-          }
-          _ => unimplemented!(),
+          })(rs1r, zero, sext16(imm as u16, 9))
         }
       }
-      _ => unimplemented!(),
     }
+    2 => {
+      let hi_imm = (half >> 12 & 1) as u16;
+      let rd_rs1 = (half >> 7 & 0b11111) as u8;
+      let rs2 = (half >> 2 & 0b11111) as u8;
+      let (rdr_rs1r, rs2r) = (Reg::x(rd_rs1), Reg::x(rs2));
+      let (rdr, rs1r) = (rdr_rs1r, rdr_rs1r);
+      match funct3 {
+        0b000 => {
+          let uimm = (hi_imm << 5) as u8 + rs2;
+          slli(rdr, rdr, uimm) // c.slli
+        }
+        0b010 | 0b011 if rd_rs1 == 0 => unimplemented!("reserved"),
+        0b001 | 0b011 => {
+          let rs2 = rs2 as u16;
+          let uimm_8_6 = rs2 & 0b111;
+          let uimm_4_3 = rs2 >> 3;
+          let uimm = (uimm_8_6 << 6) + (hi_imm << 5) + (uimm_4_3 << 3);
+          if funct3 & 0b10 == 0 {
+            // c_fldsp(FloatReg::f(rd_rs1), uimm)
+            todo!("floating point")
+          } else {
+            ld(rdr, uimm as i16, sp) // c.ldsp
+          }
+        }
+        0b010 => {
+          let uimm_7_6 = rs2 & 0b11;
+          let uimm_4_2 = rs2 >> 2;
+          let uimm = (uimm_7_6 << 6) + (hi_imm << 5) as u8 + (uimm_4_2 << 2);
+          lw(rdr, uimm as i16, sp) // c.lwsp
+        }
+        0b100 => match (hi_imm, rd_rs1, rs2) {
+          (0, 0, 0) => unimplemented!("reserved"),
+          (0, _, 0) => jalr(zero, 0, rs1r),  // c.jr
+          (0, _, _) => add(rdr, zero, rs2r), // c.mv
+          (1, 0, 0) => ebreak,               // c.ebreak
+          (1, _, 0) => jalr(ra, 0, rs1r),    // c.jalr
+          (1, _, _) => add(rdr, rdr, rs2r),  // c.add
+          _ => unimplemented!(),
+        },
+        0b101 | 0b111 => {
+          let rd_rs1 = rd_rs1 as u16;
+          let uimm_4_3 = rd_rs1 >> 3;
+          let uimm_8_6 = rd_rs1 & 0b111;
+          let uimm = (uimm_8_6 << 6) + (hi_imm << 5) + (uimm_4_3 << 3);
+          if funct3 & 0b10 == 0 {
+            // c_fsdsp(FloatReg::f(rs2), uimm)
+            todo!("floating point")
+          } else {
+            sd(rs2r, uimm as i16, sp) // c.sdsp
+          }
+        }
+        0b110 => {
+          let uimm_4_2 = rd_rs1 >> 2;
+          let uimm_7_6 = rd_rs1 & 0b111;
+          let uimm = (uimm_7_6 << 6) + (hi_imm << 5) as u8 + (uimm_4_2 << 2);
+          sw(rs2r, uimm as i16, sp) // c.swsp
+        }
+        _ => unimplemented!(),
+      }
+    }
+    _ => unimplemented!(),
   };
-  (insn, compressed)
+  Some(insn)
 }
 
 macro_rules! impl_sign_extend {
@@ -484,7 +487,7 @@ impl Reg {
 #[rustfmt::skip]
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FloatReg {
+pub enum FloatRegister {
   ft0 = 0, ft1, ft2, ft3, ft4, ft5, ft6, ft7,
   fs0, fs1,
   fa0, fa1,
@@ -493,7 +496,7 @@ pub enum FloatReg {
   ft8, ft9, ft10, ft11
 }
 
-impl FloatReg {
+impl FloatRegister {
   pub fn f(n: u8) -> Self {
     assert!(n < 32);
     // SAFETY: See assert above

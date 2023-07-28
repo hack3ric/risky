@@ -1,5 +1,4 @@
-use crate::decode::Reg;
-use crate::decode::FloatReg;
+use crate::decode::{FloatRegister, Reg};
 
 /// State of a hart.
 #[derive(Debug, Clone)]
@@ -10,15 +9,15 @@ pub struct State {
 }
 
 impl State {
-  fn pc(&self) -> i64 {
+  pub fn pc(&self) -> i64 {
     self.pc
   }
 
-  fn jump(&mut self, offset: i64) {
+  pub fn jump(&mut self, offset: i64) {
     self.pc += offset;
   }
 
-  fn reg(&self, index: Reg) -> i64 {
+  pub fn reg(&self, index: Reg) -> i64 {
     if index == Reg::zero {
       0
     } else {
@@ -26,17 +25,17 @@ impl State {
     }
   }
 
-  fn set_reg(&mut self, index: Reg, value: i64) {
+  pub fn set_reg(&mut self, index: Reg, value: i64) {
     if index != Reg::zero {
       self.regs[index as u8 as usize - 1] = value;
     }
   }
 
-  fn float_reg(&self, index: FloatReg) -> f64 {
+  pub fn float_reg(&self, index: FloatRegister) -> f64 {
     self.float_regs[index as u8 as usize]
   }
 
-  fn set_float_reg(&mut self, index: FloatReg, value: f64) {
+  pub fn set_float_reg(&mut self, index: FloatRegister, value: f64) {
     self.float_regs[index as u8 as usize] = value;
   }
 }
