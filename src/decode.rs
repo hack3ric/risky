@@ -1,3 +1,5 @@
+use mycelium_bitfield::bitfield;
+
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Instruction {
@@ -68,22 +70,96 @@ pub enum Instruction {
   fence_i,
 }
 
+bitfield! {
+  struct Encoding32<u32> {
+    const OPCODE = 7;
+    const RD = 5;
+    const FUNCT3 = 3;
+    const RS1 = 5;
+    const RS2 = 5;
+    const FUNCT7 = 7;
+  }
+}
+
+macro_rules! bitfield_getter {
+  ($($($fname:ident)|*, $type:ty, $cname:ident),*$(,)?) => {
+    $($(pub fn $fname(&self) -> $type { self.get(Self::$cname) as $type })*)*
+  };
+}
+
+impl Encoding32 {
+  bitfield_getter! {
+    opcode, u8, OPCODE,
+    rd, u8, RD,
+    funct3, u8, FUNCT3,
+    rs1, u8, RS1,
+    rs2 | shamt, u8, RS2,
+    funct7, u8, FUNCT7,
+  }
+
+  pub fn i_imm(&self) -> i16 {
+    sext16(u16::from(self.funct7() << 5) + u16::from(self.rs2()), 12)
+  }
+
+  pub fn s_imm(&self) -> i16 {
+    sext16(u16::from(self.funct7() << 5) + u16::from(self.rd()), 12)
+  }
+
+  pub fn b_imm(&self) -> i16 {
+    bitfield! {
+      struct BType<u32> {
+        const _OPCODE = 7;
+        const IMM_11 = 1;
+        const IMM_4_1 = 4;
+        const _FUNCT3 = 3;
+        const _RS1 = 5;
+        const _RS2 = 5;
+        const IMM_10_5 = 6;
+        const IMM_12 = 1;
+      }
+    }
+    let b = BType::from_bits(self.bits());
+    let imm = (b.get(BType::IMM_12) << 12)
+      + (b.get(BType::IMM_11) << 11)
+      + (b.get(BType::IMM_10_5) << 5)
+      + (b.get(BType::IMM_4_1) << 1);
+    sext16(imm as u16, 13)
+  }
+
+  pub fn u_imm(&self) -> i32 {
+    self.bits() as i32 & !0xfff
+  }
+
+  pub fn j_imm(&self) -> i32 {
+    bitfield! {
+      struct JType<u32> {
+        const _OPCODE = 7;
+        const _RD = 5;
+        const IMM_19_12 = 8;
+        const IMM_11 = 1;
+        const IMM_10_1 = 10;
+        const IMM_20 = 1;
+      }
+    }
+    let j = JType::from_bits(self.bits());
+    let imm = (j.get(JType::IMM_20) << 20)
+      + (j.get(JType::IMM_19_12) << 12)
+      + (j.get(JType::IMM_11) << 11)
+      + (j.get(JType::IMM_10_1) << 1);
+    sext32(imm, 21)
+  }
+}
+
 pub fn decode_word(word: u32) -> (Instruction, bool) {
   use Instruction::*;
   if let Some(insn) = decode_compressed(word as u16) {
     (insn, true)
   } else {
     // 32-bit
-    let funct7 = (word >> 25) as u8;
-    let rs2 = (word >> 20 & 0b11111) as u8;
-    let rs1 = (word >> 15 & 0b11111) as u8;
-    let funct3 = (word >> 12 & 0b111) as u8;
-    let rd = (word >> 7 & 0b11111) as u8;
-    let opcode = (word & 0b1111111) as u8;
-    let (rs2r, rs1r, rdr) = (Reg::x(rs2), Reg::x(rs1), Reg::x(rd));
-    let insn = match opcode >> 2 {
-      // R-type, OP
-      0b01100 => (match (funct3, funct7) {
+    let r = Encoding32::from_bits(word);
+    let (rdr, rs1r, rs2r) = (Reg::x(r.rd()), Reg::x(r.rs1()), Reg::x(r.rs2()));
+    let insn = match r.opcode() >> 2 {
+      0b01100 => (match (r.funct3(), r.funct7()) {
         (0, 0) => add,
         (0, 32) => sub,
         (4, 0) => xor,
@@ -96,8 +172,7 @@ pub fn decode_word(word: u32) -> (Instruction, bool) {
         (3, 0) => sltu,
         _ => unimplemented!(),
       })(rdr, rs1r, rs2r),
-      // R-type, OP-32
-      0b01110 => (match (funct3, funct7) {
+      0b01110 => (match (r.funct3(), r.funct7()) {
         (0, 0) => addw,
         (0, 32) => subw,
         (1, 0) => sllw,
@@ -105,117 +180,65 @@ pub fn decode_word(word: u32) -> (Instruction, bool) {
         (5, 32) => sraw,
         _ => unimplemented!(),
       })(rdr, rs1r, rs2r),
-      // I-type, OP-IMM | OP-IMM32 | LOAD
-      op @ (0b00100 | 0b00110 | 0b00000) => {
-        let imm_11_5 = funct7 as u16;
-        let imm = (imm_11_5 << 5) + rs2 as u16;
-        match op {
-          // OP-IMM
-          0b00100 => {
-            let imm = sext16(imm, 12);
-            match funct3 {
-              0 => addi(rdr, rs1r, imm),
-              4 => xori(rdr, rs1r, imm),
-              6 => ori(rdr, rs1r, imm),
-              7 => andi(rdr, rs1r, imm),
-              1 if imm_11_5 == 0 => slli(rdr, rs1r, rs2),
-              5 if imm_11_5 == 0 => srli(rdr, rs1r, rs2),
-              5 if imm_11_5 == 32 => srai(rdr, rs1r, rs2),
-              2 => slti(rdr, rs1r, imm),
-              3 => sltiu(rdr, rs1r, imm),
-              _ => unimplemented!(),
-            }
-          }
-          // OP-IMM32
-          0b00110 => match (funct3, imm_11_5) {
-            (0, _) => addiw(rdr, rs1r, sext16(imm, 12)),
-            (1, 0) => slliw(rdr, rs1r, rs2),
-            (5, 0) => srliw(rdr, rs1r, rs2),
-            (5, 32) => sraiw(rdr, rs1r, rs2),
-            _ => unimplemented!(),
-          },
-          // LOAD
-          0b00000 => (match funct3 {
-            0b000 => lb,
-            0b001 => lh,
-            0b010 => lw,
-            0b011 => ld,
-            0b100 => lbu,
-            0b101 => lhu,
-            0b110 => lwu,
-            _ => unimplemented!(),
-          })(rdr, sext16(imm, 12), rs1r),
-          _ => unreachable!(),
-        }
-      }
-      // S-type, STORE
-      0b01000 => {
-        let imm_11_5 = funct7 as u16;
-        let imm = (imm_11_5 << 5) + rd as u16;
-        (match funct3 {
-          0b000 => sb,
-          0b001 => sh,
-          0b010 => sw,
-          0b011 => sd,
-          _ => unimplemented!(),
-        })(rs2r, sext16(imm, 12), rs1r)
-      }
-      // I-type(?), SYSTEM
-      0b11100 => match (funct7, rs2, rs1, funct3, rd) {
-        (0, 0, 0, 0, 0) => ecall,
-        (1, 0, 0, 0, 0) => ebreak,
+      0b00100 => match r.funct3() {
+        0 => addi(rdr, rs1r, r.i_imm()),
+        4 => xori(rdr, rs1r, r.i_imm()),
+        6 => ori(rdr, rs1r, r.i_imm()),
+        7 => andi(rdr, rs1r, r.i_imm()),
+        1 if r.funct7() == 0 => slli(rdr, rs1r, r.shamt()),
+        5 if r.funct7() == 0 => srli(rdr, rs1r, r.shamt()),
+        5 if r.funct7() == 32 => srai(rdr, rs1r, r.shamt()),
+        2 => slti(rdr, rs1r, r.i_imm()),
+        3 => sltiu(rdr, rs1r, r.i_imm()),
         _ => unimplemented!(),
       },
-      // B-type, BRANCH
-      0b11000 => {
-        let (funct7, rd) = (funct7 as u16, rd as u16);
-        let (imm_12, imm_10_5) = (funct7 >> 6, funct7 & 0b111111);
-        let (imm_4_1, imm_11) = (rd >> 1 & 0b1111, rd & 1);
-        let imm = (imm_12 << 12) + (imm_11 << 11) + (imm_10_5 << 5) + (imm_4_1 << 1);
-        (match funct3 {
-          0b000 => beq,
-          0b001 => bne,
-          0b100 => blt,
-          0b101 => bge,
-          0b110 => bltu,
-          0b111 => bgeu,
-          _ => unimplemented!(),
-        })(rs1r, rs2r, sext16(imm, 13))
-      }
-      // lui | auipc
-      op @ (0b01101 | 0b00101) => {
-        let (imm_31_25, imm_24_20, imm_19_15, imm_14_12) =
-          (funct7 as u32, rs2 as u32, rs1 as u32, funct3 as u32);
-        let imm = (imm_31_25 << 25) + (imm_24_20 << 20) + (imm_19_15 << 15) + (imm_14_12 << 12);
-        (match op {
-          0b01101 => lui,
-          0b00101 => auipc,
-          _ => unimplemented!(),
-        })(rdr, imm as i32) // Already 32-bit, no need to sign extend
-      }
-      // J-type, jal
-      0b11011 => {
-        let (funct7, rs2, imm_19_15, imm_14_12) =
-          (funct7 as u32, rs2 as u32, rs1 as u32, funct3 as u32);
-        let imm = ((funct7 >> 6) << 20)
-          + (imm_19_15 << 15)
-          + (imm_14_12 << 12)
-          + ((rs2 & 1) << 11)
-          + ((funct7 & 0b111111) << 5)
-          + ((rs2 >> 1) << 1);
-        jal(rdr, sext32(imm, 21))
-      }
-      // R-type, jalr
-      0b11001 => {
-        let imm_11_5 = funct7 as u16;
-        let imm = (imm_11_5 << 5) + rs2 as u16;
-        jalr(rdr, sext16(imm, 20), rs1r)
-      }
+      0b00110 => match (r.funct3(), r.funct7()) {
+        (0, _) => addiw(rdr, rs1r, r.i_imm()),
+        (1, 0) => slliw(rdr, rs1r, r.shamt()),
+        (5, 0) => srliw(rdr, rs1r, r.shamt()),
+        (5, 32) => sraiw(rdr, rs1r, r.shamt()),
+        _ => unimplemented!(),
+      },
+      0b00000 => (match r.funct3() {
+        0b000 => lb,
+        0b001 => lh,
+        0b010 => lw,
+        0b011 => ld,
+        0b100 => lbu,
+        0b101 => lhu,
+        0b110 => lwu,
+        _ => unimplemented!(),
+      })(rdr, r.i_imm(), rs1r),
+      0b01000 => (match r.funct3() {
+        0b000 => sb,
+        0b001 => sh,
+        0b010 => sw,
+        0b011 => sd,
+        _ => unimplemented!(),
+      })(rs2r, r.s_imm(), rs1r),
+      0b11100 => match (r.i_imm(), r.rs1(), r.funct3(), r.rd()) {
+        (0, 0, 0, 0) => ecall,
+        (1, 0, 0, 0) => ebreak,
+        _ => unimplemented!(),
+      },
+      0b11000 => (match r.funct3() {
+        0b000 => beq,
+        0b001 => bne,
+        0b100 => blt,
+        0b101 => bge,
+        0b110 => bltu,
+        0b111 => bgeu,
+        _ => unimplemented!(),
+      })(rs1r, rs2r, r.b_imm()),
+      0b01101 => lui(rdr, r.u_imm()),
+      0b00101 => auipc(rdr, r.u_imm()),
+      0b11011 => jal(rdr, r.j_imm()),
+      0b11001 if r.funct3() == 0 => jalr(rdr, r.i_imm(), rs1r),
       0b00011 => {
         use fence_op::*;
         let fm = word >> 28;
         let io = (word >> 20) as u8;
-        match (fm, io, rs1, funct3, rd) {
+        match (fm, io, r.rs1(), r.funct3(), r.rd()) {
           (0b0000, 0, 0, 1, 0) => fence_i,
           (0b0000, io, _, 0, _) => fence(io),
           (0b1000, PR | PW | SR | SW, 0, 0, 0) => fence_tso,
